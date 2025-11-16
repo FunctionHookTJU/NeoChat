@@ -1,6 +1,6 @@
 """
-NeoChat HTTP 服务端
-使用 HTTP 协议，支持 GET/POST 请求，适配各类 HTTP 客户端
+NeoChat HTTPS 服务端
+使用 HTTPS 协议，支持 GET/POST 请求，适配各类 HTTPS 客户端
 """
 
 import asyncio
@@ -14,6 +14,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 import threading
 import urllib.parse
+import ssl
+import os
 
 class Colors:
     """终端颜色代码"""
@@ -27,16 +29,25 @@ class Colors:
     BOLD = '\033[1m'
 
 class HTTPChatServer:
-    def __init__(self, host='0.0.0.0', port=9999):
+    def __init__(self, host='0.0.0.0', port=9999, use_ssl=False, certfile=None, keyfile=None):
         self.host = host
         self.port = port
+        self.use_ssl = use_ssl
+        self.certfile = certfile
+        self.keyfile = keyfile
         self.clients = {}  # {session_id: username}
+        self.client_activity = {}  # {session_id: last_active_time}
         self.messages = []  # 消息历史
         self.message_count = 0
         self.start_time = datetime.now()
         self.is_running = True
         self.session_counter = 0
         self.lock = threading.Lock()
+        self.session_timeout = 300  # 5分钟无活动则超时
+        
+        # 启动会话清理线程
+        self.cleanup_thread = threading.Thread(target=self._cleanup_inactive_sessions, daemon=True)
+        self.cleanup_thread.start()
         
     def log(self, message, level='INFO'):
         """格式化日志输出"""
@@ -69,6 +80,45 @@ class HTTPChatServer:
         except:
             return "127.0.0.1"
     
+    def _cleanup_inactive_sessions(self):
+        """清理不活跃的会话"""
+        while self.is_running:
+            try:
+                threading.Event().wait(60)  # 每分钟检查一次
+                
+                with self.lock:
+                    now = datetime.now()
+                    inactive_sessions = []
+                    
+                    for session_id, last_active in list(self.client_activity.items()):
+                        if (now - last_active).total_seconds() > self.session_timeout:
+                            inactive_sessions.append(session_id)
+                    
+                    for session_id in inactive_sessions:
+                        if session_id in self.clients:
+                            username = self.clients[session_id]
+                            del self.clients[session_id]
+                            del self.client_activity[session_id]
+                            
+                            leave_msg = {
+                                'type': 'system',
+                                'time': self.get_time(),
+                                'message': f"{username} 连接超时，已离开聊天室"
+                            }
+                            self.messages.append(leave_msg)
+                            self.log(f"✗ {username} 会话超时 | 剩余: {len(self.clients)}人", 'WARNING')
+                            
+            except Exception as e:
+                self.log(f"会话清理错误: {e}", 'ERROR')
+    
+    def update_activity(self, session_id):
+        """更新会话活动时间"""
+        with self.lock:
+            if session_id in self.clients:
+                self.client_activity[session_id] = datetime.now()
+                return True
+            return False
+    
     def create_session(self, username):
         """创建新会话"""
         with self.lock:
@@ -86,6 +136,7 @@ class HTTPChatServer:
                 self.log(f"用户名 {original_username} 已存在，自动改为 {username}", 'WARNING')
             
             self.clients[session_id] = username
+            self.client_activity[session_id] = datetime.now()
             
             # 添加系统消息
             join_msg = {
@@ -106,6 +157,9 @@ class HTTPChatServer:
                 username = self.clients[session_id]
                 del self.clients[session_id]
                 
+                if session_id in self.client_activity:
+                    del self.client_activity[session_id]
+                
                 # 添加系统消息
                 leave_msg = {
                     'type': 'system',
@@ -120,7 +174,10 @@ class HTTPChatServer:
         """发送消息"""
         with self.lock:
             if session_id not in self.clients:
-                return {'error': '无效的会话ID'}
+                return {'error': '无效的会话ID，可能已超时'}
+            
+            # 更新活动时间
+            self.client_activity[session_id] = datetime.now()
             
             username = self.clients[session_id]
             
@@ -286,8 +343,18 @@ def create_handler(chat_server):
                 self.wfile.write(html.encode('utf-8'))
             
             elif path == '/messages':
-                # 获取消息
+                # 获取消息（同时作为心跳）
                 since = int(query.get('since', ['0'])[0])
+                session_id = query.get('session_id', [''])[0]
+                
+                # 验证会话并更新活动时间
+                if session_id and not chat_server.update_activity(session_id):
+                    self.send_json_response({
+                        'error': '会话已失效，请重新登录',
+                        'session_expired': True
+                    }, 401)
+                    return
+                
                 messages = chat_server.get_messages(since)
                 self.send_json_response({
                     'success': True,

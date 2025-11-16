@@ -418,14 +418,30 @@
             if (!isConnected) return;
 
             try {
-                const response = await fetch(`${serverUrl}/messages?since=${messageIndex}`);
+                const response = await fetch(`${serverUrl}/messages?since=${messageIndex}&session_id=${sessionId}`);
 
                 if (!response.ok) {
+                    if (response.status === 401) {
+                        // 会话过期
+                        const data = await response.json();
+                        if (data.session_expired) {
+                            alert('会话已过期，请重新登录');
+                            disconnect();
+                        }
+                    }
                     console.error('获取消息失败:', response.statusText);
                     return;
                 }
 
                 const data = await response.json();
+
+                if (data.error) {
+                    if (data.session_expired) {
+                        alert('会话已过期，请重新登录');
+                        disconnect();
+                    }
+                    return;
+                }
 
                 if (data.success && data.messages.length > 0) {
                     data.messages.forEach(msg => {
@@ -435,6 +451,7 @@
                 }
             } catch (error) {
                 console.error('轮询错误:', error);
+                // 网络错误不断开，继续尝试
             }
         }
 
