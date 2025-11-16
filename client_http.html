@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeoChat HTTP - 聊天客户端</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #login-container {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            width: 450px;
+            text-align: center;
+        }
+
+        #login-container h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 32px;
+        }
+
+        .subtitle {
+            color: #888;
+            font-size: 14px;
+            margin-bottom: 30px;
+        }
+
+        .protocol-badge {
+            display: inline-block;
+            background: #10b981;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        #status-msg {
+            margin-top: 15px;
+            min-height: 20px;
+        }
+
+        .status-message {
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .status-info {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .status-success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        #chat-container {
+            display: none;
+            background: white;
+            width: 800px;
+            height: 600px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            flex-direction: column;
+        }
+
+        #chat-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 15px 15px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #chat-header h2 {
+            font-size: 22px;
+            font-weight: 600;
+        }
+
+        #chat-header .connection-info {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+
+        #disconnect-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        #disconnect-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        #messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: #f9fafb;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message-time {
+            font-size: 11px;
+            color: #9ca3af;
+            margin-bottom: 4px;
+        }
+
+        .message-content {
+            display: inline-block;
+            padding: 10px 15px;
+            border-radius: 10px;
+            max-width: 70%;
+            word-wrap: break-word;
+        }
+
+        .message-system {
+            text-align: center;
+            color: #6b7280;
+            font-size: 13px;
+            font-style: italic;
+        }
+
+        .message-system .message-content {
+            background: #e5e7eb;
+            color: #4b5563;
+        }
+
+        .message-other .message-content {
+            background: white;
+            border: 1px solid #e5e7eb;
+        }
+
+        .message-other .message-username {
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 4px;
+            font-size: 13px;
+        }
+
+        .message-self .message-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            float: right;
+        }
+
+        .message-self .message-time {
+            text-align: right;
+        }
+
+        #input-area {
+            padding: 20px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            gap: 10px;
+        }
+
+        #message-input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            resize: none;
+            font-family: inherit;
+        }
+
+        #message-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        #send-btn {
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        #send-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        #send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- 登录界面 -->
+    <div id="login-container">
+        <h1>🌐 NeoChat HTTP</h1>
+        <div class="subtitle">HTTP 协议聊天客户端</div>
+        <div class="protocol-badge">HTTP/1.1</div>
+        
+        <div class="input-group">
+            <label for="server-address">服务器地址</label>
+            <input type="text" id="server-address" placeholder="例如: http://localhost:9999" value="http://localhost:9999">
+        </div>
+        
+        <div class="input-group">
+            <label for="username">用户名</label>
+            <input type="text" id="username" placeholder="输入你的昵称" value="">
+        </div>
+        
+        <button class="btn" onclick="connect()">🚀 连接服务器</button>
+        
+        <div id="status-msg"></div>
+    </div>
+
+    <!-- 聊天界面 -->
+    <div id="chat-container">
+        <div id="chat-header">
+            <div>
+                <h2 id="chat-title">NeoChat HTTP</h2>
+                <div class="connection-info" id="connection-info"></div>
+            </div>
+            <button id="disconnect-btn" onclick="disconnect()">断开连接</button>
+        </div>
+        
+        <div id="messages"></div>
+        
+        <div id="input-area">
+            <textarea id="message-input" rows="1" placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"></textarea>
+            <button id="send-btn" onclick="sendMessage()">发送</button>
+        </div>
+    </div>
+
+    <script>
+        let username = '';
+        let serverUrl = '';
+        let sessionId = '';
+        let messageIndex = 0;
+        let pollInterval = null;
+        let isConnected = false;
+
+        // 显示状态消息
+        function showStatus(message, type = 'info') {
+            const statusMsg = document.getElementById('status-msg');
+            statusMsg.innerHTML = `<div class="status-message status-${type}">${message}</div>`;
+        }
+
+        // 连接服务器
+        async function connect() {
+            const serverInput = document.getElementById('server-address').value.trim();
+            const usernameInput = document.getElementById('username').value.trim();
+
+            if (!serverInput) {
+                showStatus('请输入服务器地址', 'error');
+                return;
+            }
+
+            if (!usernameInput) {
+                showStatus('请输入用户名', 'error');
+                return;
+            }
+
+            // 保存配置
+            localStorage.setItem('neochat_http_server', serverInput);
+            localStorage.setItem('neochat_http_username', usernameInput);
+
+            serverUrl = serverInput;
+            username = usernameInput;
+
+            showStatus('正在连接服务器...', 'info');
+
+            try {
+                // 加入聊天
+                const response = await fetch(`${serverUrl}/join?username=${encodeURIComponent(username)}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                if (data.success) {
+                    sessionId = data.session_id;
+                    username = data.username; // 可能被服务器修改（去重）
+                    isConnected = true;
+
+                    // 切换到聊天界面
+                    document.getElementById('login-container').style.display = 'none';
+                    document.getElementById('chat-container').style.display = 'flex';
+                    document.getElementById('chat-title').textContent = `NeoChat - ${username}`;
+                    document.getElementById('connection-info').textContent = `已连接到 ${serverUrl}`;
+
+                    // 开始轮询消息
+                    startPolling();
+
+                    // 聚焦输入框
+                    document.getElementById('message-input').focus();
+                } else {
+                    showStatus(data.error || '连接失败', 'error');
+                }
+            } catch (error) {
+                showStatus(`连接失败: ${error.message}`, 'error');
+                console.error('连接错误:', error);
+            }
+        }
+
+        // 开始轮询消息
+        function startPolling() {
+            // 立即获取一次消息
+            pollMessages();
+
+            // 每秒轮询一次
+            pollInterval = setInterval(pollMessages, 1000);
+        }
+
+        // 轮询消息
+        async function pollMessages() {
+            if (!isConnected) return;
+
+            try {
+                const response = await fetch(`${serverUrl}/messages?since=${messageIndex}`);
+
+                if (!response.ok) {
+                    console.error('获取消息失败:', response.statusText);
+                    return;
+                }
+
+                const data = await response.json();
+
+                if (data.success && data.messages.length > 0) {
+                    data.messages.forEach(msg => {
+                        displayMessage(msg);
+                        messageIndex++;
+                    });
+                }
+            } catch (error) {
+                console.error('轮询错误:', error);
+            }
+        }
+
+        // 显示消息
+        function displayMessage(msg) {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+
+            if (msg.type === 'system') {
+                messageDiv.className = 'message message-system';
+                messageDiv.innerHTML = `
+                    <div class="message-time">${msg.time}</div>
+                    <div class="message-content">${escapeHtml(msg.message)}</div>
+                `;
+            } else {
+                const isSelf = msg.username === username;
+                messageDiv.className = `message message-${isSelf ? 'self' : 'other'}`;
+
+                if (isSelf) {
+                    messageDiv.innerHTML = `
+                        <div class="message-time">${msg.time}</div>
+                        <div class="message-content">${escapeHtml(msg.message)}</div>
+                    `;
+                } else {
+                    messageDiv.innerHTML = `
+                        <div class="message-username">${escapeHtml(msg.username)}</div>
+                        <div class="message-time">${msg.time}</div>
+                        <div class="message-content">${escapeHtml(msg.message)}</div>
+                    `;
+                }
+            }
+
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // 发送消息
+        async function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+
+            if (!message) return;
+
+            try {
+                const response = await fetch(`${serverUrl}/message`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        message: message
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    input.value = '';
+                    input.style.height = 'auto';
+                } else {
+                    alert('发送失败: ' + (data.error || '未知错误'));
+                }
+            } catch (error) {
+                alert('发送失败: ' + error.message);
+                console.error('发送错误:', error);
+            }
+        }
+
+        // 断开连接
+        async function disconnect() {
+            if (!isConnected) return;
+
+            try {
+                await fetch(`${serverUrl}/leave`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId
+                    })
+                });
+            } catch (error) {
+                console.error('离开错误:', error);
+            }
+
+            // 停止轮询
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+
+            isConnected = false;
+            sessionId = '';
+            messageIndex = 0;
+
+            // 清空消息
+            document.getElementById('messages').innerHTML = '';
+
+            // 返回登录界面
+            document.getElementById('chat-container').style.display = 'none';
+            document.getElementById('login-container').style.display = 'block';
+
+            showStatus('已断开连接', 'info');
+        }
+
+        // HTML 转义
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // 加载保存的配置
+        window.onload = function() {
+            const savedServer = localStorage.getItem('neochat_http_server');
+            const savedUsername = localStorage.getItem('neochat_http_username');
+
+            if (savedServer) {
+                document.getElementById('server-address').value = savedServer;
+            }
+            if (savedUsername) {
+                document.getElementById('username').value = savedUsername;
+            }
+        };
+
+        // 键盘事件
+        document.getElementById('message-input').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // 用户名输入框回车
+        document.getElementById('username').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                connect();
+            }
+        });
+
+        // 服务器地址输入框回车
+        document.getElementById('server-address').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                document.getElementById('username').focus();
+            }
+        });
+
+        // 页面关闭前断开连接
+        window.addEventListener('beforeunload', function() {
+            if (isConnected) {
+                disconnect();
+            }
+        });
+    </script>
+</body>
+</html>
