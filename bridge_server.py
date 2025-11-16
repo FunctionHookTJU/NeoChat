@@ -127,28 +127,32 @@ if __name__ == '__main__':
         print("配置向导")
         print("=" * 60)
         
-        choice = input("\n选择 TCP 服务器类型:\n1. 本地服务器 (127.0.0.1:9999)\n2. 内网穿透服务器 (需要输入地址)\n请选择 [1/2]: ").strip()
+        print("\n请输入 TCP 服务器地址和端口")
+        print("示例:  127.0.0.1:9999")
         
-        if choice == '2':
-            tcp_host = input("请输入内网穿透地址 (例如: 111.161.121.11): ").strip()
-            tcp_port = input("请输入端口 (例如: 57424): ").strip()
+        while True:
+            server_input = input("\nTCP 服务器地址 (格式: 地址:端口): ").strip()
             
-            try:
-                tcp_port = int(tcp_port)
-                config = {
-                    "tcp_host": tcp_host,
-                    "tcp_port": tcp_port,
-                    "ws_host": "0.0.0.0",
-                    "ws_port": 8080,
-                    "comment": "桥接到内网穿透服务器"
-                }
-                with open('bridge_config.json', 'w', encoding='utf-8') as f:
-                    json.dump(config, f, indent=4, ensure_ascii=False)
-                print(f"✓ 配置已保存: {tcp_host}:{tcp_port}")
-            except:
-                print("✗ 配置无效，使用默认配置")
-        else:
-            print("✓ 使用本地服务器配置")
+            if ':' in server_input:
+                try:
+                    tcp_host, tcp_port_str = server_input.split(':', 1)
+                    tcp_port = int(tcp_port_str)
+                    
+                    config = {
+                        "tcp_host": tcp_host,
+                        "tcp_port": tcp_port,
+                        "ws_host": "0.0.0.0",
+                        "ws_port": 8080,
+                        "comment": "桥接到内网穿透服务器"
+                    }
+                    with open('bridge_config.json', 'w', encoding='utf-8') as f:
+                        json.dump(config, f, indent=4, ensure_ascii=False)
+                    print(f"✓ 配置已保存: {tcp_host}:{tcp_port}")
+                    break
+                except ValueError:
+                    print("✗ 端口号无效，请输入正确的格式 (例如: 127.0.0.1:9999)")
+            else:
+                print("✗ 格式错误，请使用 地址:端口 格式 (例如: 127.0.0.1:9999)")
     
     # 加载配置
     config = load_config()
