@@ -1,0 +1,76 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.pyc
+
+# Python 虚拟环境
+venv/
+env/
+ENV/
+.venv/
+
+# C++ 编译产物
+*.exe
+*.out
+*.o
+*.obj
+*.a
+*.lib
+*.dll
+server
+client
+server_ws.exe
+server_tcp.exe
+
+# C++ 构建目录
+build/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+
+# vcpkg 包管理器（体积大，不需要提交）
+vcpkg/
+websocketpp/
+boost/
+
+# 配置文件（包含个人信息）
+bridge_config.json
+user_config.json
+user_config.txt
+*.local.json
+
+# 日志文件
+*.log
+logs/
+
+# 测试文件
+test_*.py
+*_test.py
+
+# 备份文件
+*_old.*
+*.bak
+*.backup
+
+# IDE 和编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.vs/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 临时文件
+*.tmp
+*.temp
+.cache/
