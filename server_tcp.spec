@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['G:\\c_PROJECT\\NeoChat\\server_tcp.py'],
+    ['g:\\c_PROJECT\\NeoChat\\server_tcp.py'],
     pathex=[],
     binaries=[],
     datas=[],

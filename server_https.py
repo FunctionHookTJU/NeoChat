@@ -409,7 +409,11 @@ def create_handler(chat_server):
     
     class ChatHTTPRequestHandler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
-            """禁用默认日志"""
+            """禁用默认日志 - 防止HTTP请求头被记录为聊天消息"""
+            pass
+        
+        def log_request(self, code='-', size='-'):
+            """禁用请求日志"""
             pass
         
         def send_json_response(self, data, status=200):

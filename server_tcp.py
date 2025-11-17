@@ -196,8 +196,9 @@ class TCPChatServer:
                 data = await asyncio.wait_for(reader.readline(), timeout=30.0)
                 username = data.decode('utf-8').strip()
                 
-                if not username:
-                    self.log(f"客户端 {client_address} 未提供用户名", 'WARNING')
+                # 过滤无效的用户名（HTTP 请求等）
+                if not username or username.startswith(('GET ', 'POST ', 'PUT ', 'DELETE ', 'HEAD ', 'OPTIONS ', 'PATCH ', 'HTTP/')):
+                    self.log(f"客户端 {client_address} 发送了无效的用户名或 HTTP 请求", 'WARNING')
                     writer.close()
                     await writer.wait_closed()
                     return
@@ -250,6 +251,22 @@ class TCPChatServer:
                 
                 message = data.decode('utf-8').strip()
                 if message:
+                    # 过滤 HTTP 协议相关的消息（忽略 HTTP 请求头）
+                    # 检查是否是 HTTP 请求行或请求头
+                    if (message.startswith(('GET ', 'POST ', 'PUT ', 'DELETE ', 'HEAD ', 'OPTIONS ', 'PATCH ', 'TRACE ', 'CONNECT ')) or
+                        message.startswith('HTTP/') or
+                        ':' in message and message.split(':', 1)[0].strip() in [
+                            'Host', 'User-Agent', 'Accept', 'Accept-Encoding', 'Accept-Language',
+                            'Connection', 'Content-Type', 'Content-Length', 'Origin', 'Referer',
+                            'Cache-Control', 'Pragma', 'Authorization', 'Cookie', 'Set-Cookie',
+                            'Access-Control-Request-Method', 'Access-Control-Request-Headers',
+                            'X-Forwarded-For', 'X-Forwarded-Proto', 'X-Real-Ip', 'X-Original-Host',
+                            'Sec-Fetch-Dest', 'Sec-Fetch-Mode', 'Sec-Fetch-Site', 'Priority',
+                            'Upgrade', 'Sec-WebSocket-Key', 'Sec-WebSocket-Version'
+                        ]):
+                        # 忽略 HTTP 协议消息，不记录不广播
+                        continue
+                    
                     self.message_count += 1
                     
                     # 检查是否是命令

@@ -314,8 +314,12 @@ class LoginWindow:
         result = self.client.connect(host, port, username)
         
         if isinstance(result, tuple) and result[0] is True:
-            # 连接成功，打开聊天窗口
-            self.window.withdraw()  # 隐藏登录窗口
+            # 连接成功，恢复按钮状态（为下次连接做准备）
+            self.connect_btn.set_state(tk.NORMAL)
+            self.connect_btn.set_text("连接")
+            
+            # 隐藏登录窗口并打开聊天窗口
+            self.window.withdraw()
             self.chat_window = ChatWindow(self.client, self.window)
             self.chat_window.run()
         else:
@@ -432,6 +436,11 @@ class ChatWindow:
         
         # 绑定Canvas大小变化
         self.message_canvas.bind('<Configure>', self._on_canvas_configure)
+        
+        # 绑定鼠标滚轮
+        self.message_canvas.bind_all('<MouseWheel>', self._on_mousewheel)
+        self.message_canvas.bind_all('<Button-4>', self._on_mousewheel)
+        self.message_canvas.bind_all('<Button-5>', self._on_mousewheel)
         
         # 输入区域
         input_frame = tk.Frame(self.window, bg="white", height=100)
@@ -605,6 +614,13 @@ class ChatWindow:
     def _on_canvas_configure(self, event):
         """Canvas大小改变时调整窗口宽度"""
         self.message_canvas.itemconfig(self.canvas_window, width=event.width)
+    
+    def _on_mousewheel(self, event):
+        """处理鼠标滚轮事件"""
+        if event.num == 5 or event.delta < 0:
+            self.message_canvas.yview_scroll(1, "units")
+        elif event.num == 4 or event.delta > 0:
+            self.message_canvas.yview_scroll(-1, "units")
 
     def _create_bubble_canvas(self, parent, text, bg_color, fg_color, font, max_width=360):
         """创建带圆角背景的消息气泡"""
@@ -616,7 +632,7 @@ class ChatWindow:
         bubble_canvas.delete(temp_id)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
-        width = int(max(text_width + padding_x * 2, 80))
+        width = int(max(text_width + padding_x * 2, 50))
         height = int(max(text_height + padding_y * 2, 36))
         bubble_canvas.config(width=width, height=height)
         draw_rounded_rect(bubble_canvas, 0, 0, width, height, radius=18, fill=bg_color)
@@ -684,17 +700,33 @@ class ChatWindow:
     def go_back(self):
         """返回登录界面"""
         if messagebox.askyesno("返回登录", "确定要返回登录界面重新连接吗？"):
+            # 解绑滚轮事件
+            self.message_canvas.unbind_all('<MouseWheel>')
+            self.message_canvas.unbind_all('<Button-4>')
+            self.message_canvas.unbind_all('<Button-5>')
+            
             self.client.disconnect()
             self.window.destroy()
             self.login_window.deiconify()
+            
+            # 重置登录窗口状态
             self.login_window.connect_btn.set_state(tk.NORMAL)
             self.login_window.connect_btn.set_text("连接")
             self.login_window.client = None
+            self.login_window.chat_window = None
             self.login_window.host_entry.focus_set()
     
     def on_closing(self):
         """关闭窗口"""
         if messagebox.askokcancel("退出", "确定要退出聊天吗？"):
+            # 解绑滚轮事件
+            try:
+                self.message_canvas.unbind_all('<MouseWheel>')
+                self.message_canvas.unbind_all('<Button-4>')
+                self.message_canvas.unbind_all('<Button-5>')
+            except:
+                pass
+            
             self.client.disconnect()
             self.window.destroy()
             self.login_window.destroy()
