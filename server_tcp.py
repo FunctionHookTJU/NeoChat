@@ -10,6 +10,9 @@ import signal
 import sys
 import platform
 import socket
+import os
+import time
+import threading
 
 class Colors:
     """终端颜色代码"""
@@ -28,9 +31,20 @@ class TCPChatServer:
         self.port = port
         self.clients = {}  # {writer: username}
         self.client_info = {}  # {writer: {address, connect_time}}
+        self.ip_to_writer = {}  # {ip_address: writer} 根据IP防止重复连接
+        self.messages = []  # 消息历史
         self.message_count = 0
         self.start_time = datetime.now()
         self.is_running = True
+        
+        # 日志相关
+        self.log_dir = 'chat_logs'
+        if not os.path.exists(self.log_dir):
+            os.makedirs(self.log_dir)
+        
+        # 启动定时日志保存和内存清理线程（每3小时）
+        self.periodic_task_thread = threading.Thread(target=self._periodic_save_and_clear, daemon=True)
+        self.periodic_task_thread.start()
         
     def log(self, message, level='INFO'):
         """格式化日志输出"""
@@ -63,18 +77,117 @@ class TCPChatServer:
         except:
             return "127.0.0.1"
     
+    def _save_logs_to_file(self):
+        """保存对话和用户访问情况到日志文件"""
+        try:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            log_file = os.path.join(self.log_dir, f'chat_log_{timestamp}.json')
+            
+            # 收集在线用户信息
+            online_users = []
+            session_info = []
+            for writer, username in list(self.clients.items()):
+                online_users.append(username)
+                info = self.client_info.get(writer, {})
+                session_info.append({
+                    'username': username,
+                    'address': info.get('address', 'Unknown'),
+                    'connect_time': info.get('connect_time', datetime.now()).strftime('%Y-%m-%d %H:%M:%S'),
+                    'online_duration': (datetime.now() - info.get('connect_time', datetime.now())).total_seconds()
+                })
+            
+            log_data = {
+                'save_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'server_start_time': self.start_time.strftime('%Y-%m-%d %H:%M:%S'),
+                'total_messages': len(self.messages),
+                'message_count': self.message_count,
+                'current_online_users': len(self.clients),
+                'online_users': online_users,
+                'messages': self.messages.copy(),
+                'session_info': session_info
+            }
+            
+            with open(log_file, 'w', encoding='utf-8') as f:
+                json.dump(log_data, f, ensure_ascii=False, indent=2)
+            
+            self.log(f"✓ 日志已保存: {log_file} | 消息数: {len(self.messages)} | 在线用户: {len(self.clients)}", 'SUCCESS')
+            return True
+        except Exception as e:
+            self.log(f"保存日志失败: {e}", 'ERROR')
+            return False
+    
+    def _clear_memory(self):
+        """清除内存中的消息历史"""
+        try:
+            old_message_count = len(self.messages)
+            self.messages.clear()
+            self.message_count = 0
+            self.log(f"✓ 内存已清理: 清除了 {old_message_count} 条消息", 'SUCCESS')
+            return True
+        except Exception as e:
+            self.log(f"清理内存失败: {e}", 'ERROR')
+            return False
+    
+    def _periodic_save_and_clear(self):
+        """定期（每3小时）保存日志并清理内存"""
+        interval = 3 * 60 * 60  # 3小时（秒）
+        
+        while self.is_running:
+            try:
+                # 等待3小时
+                time.sleep(interval)
+                
+                if not self.is_running:
+                    break
+                
+                self.log("开始执行定期日志保存和内存清理...", 'SYSTEM')
+                
+                # 1. 保存日志
+                if self._save_logs_to_file():
+                    # 2. 清理内存
+                    self._clear_memory()
+                    self.log("定期任务完成", 'SUCCESS')
+                else:
+                    self.log("定期任务失败：日志保存失败", 'ERROR')
+                    
+            except Exception as e:
+                self.log(f"定期任务错误: {e}", 'ERROR')
+    
     async def handle_client(self, reader, writer):
         """处理单个客户端连接"""
         username = None
         addr = writer.get_extra_info('peername')
         client_address = f"{addr[0]}:{addr[1]}" if addr else "Unknown"
+        client_ip = addr[0] if addr else "Unknown"
         
         try:
+            # 检查是否已有此IP的连接
+            if client_ip in self.ip_to_writer:
+                old_writer = self.ip_to_writer[client_ip]
+                if old_writer in self.clients:
+                    old_username = self.clients[old_writer]
+                    self.log(f"检测到重复连接，关闭旧连接: {old_username} ({client_ip})", 'WARNING')
+                    
+                    # 关闭旧连接
+                    try:
+                        old_writer.close()
+                        await old_writer.wait_closed()
+                    except:
+                        pass
+                    
+                    # 清理旧连接的数据
+                    if old_writer in self.clients:
+                        del self.clients[old_writer]
+                    if old_writer in self.client_info:
+                        del self.client_info[old_writer]
+            
             # 记录连接信息
             self.client_info[writer] = {
                 'address': client_address,
-                'connect_time': datetime.now()
+                'connect_time': datetime.now(),
+                'ip': client_ip
             }
+            self.ip_to_writer[client_ip] = writer
             
             self.log(f"新连接来自 {client_address}", 'INFO')
             
@@ -117,6 +230,7 @@ class TCPChatServer:
                 'time': self.get_time(),
                 'message': f"{username} 加入了聊天室"
             }
+            self.messages.append(join_msg)  # 保存到历史
             await self.broadcast(json.dumps(join_msg, ensure_ascii=False) + '\n', exclude=writer)
             
             # 发送欢迎消息
@@ -152,6 +266,7 @@ class TCPChatServer:
                         'username': username,
                         'message': message
                     }
+                    self.messages.append(broadcast_msg)  # 保存到历史
                     await self.broadcast(json.dumps(broadcast_msg, ensure_ascii=False) + '\n', exclude=writer)
                     
         except asyncio.CancelledError:
@@ -170,6 +285,12 @@ class TCPChatServer:
                     info = self.client_info[writer]
                     duration = (datetime.now() - info['connect_time']).total_seconds()
                     self.log(f"✗ {username} ({client_address}) 离开聊天室 | 在线时长: {duration:.1f}秒 | 剩余: {len(self.clients)}人", 'INFO')
+                    
+                    # 清理IP映射
+                    if 'ip' in info and info['ip'] in self.ip_to_writer:
+                        if self.ip_to_writer[info['ip']] == writer:
+                            del self.ip_to_writer[info['ip']]
+                    
                     del self.client_info[writer]
                 
                 # 广播离开消息
@@ -178,6 +299,7 @@ class TCPChatServer:
                     'time': self.get_time(),
                     'message': f"{username} 离开了聊天室"
                 }
+                self.messages.append(leave_msg)  # 保存到历史
                 await self.broadcast(json.dumps(leave_msg, ensure_ascii=False) + '\n')
             
             # 关闭连接
@@ -198,7 +320,7 @@ class TCPChatServer:
             response = {
                 'type': 'system',
                 'time': self.get_time(),
-                'message': '可用命令: /help, /online, /ping, /stats'
+                'message': '可用命令: /help, /online, /ping, /stats, /savelog'
             }
         
         elif cmd == '/online':
@@ -223,6 +345,20 @@ class TCPChatServer:
                 'time': self.get_time(),
                 'message': f"服务器统计: 运行时长 {uptime:.0f}秒, 消息总数 {self.message_count}, 在线人数 {len(self.clients)}"
             }
+        
+        elif cmd == '/savelog':
+            if self._save_logs_to_file():
+                response = {
+                    'type': 'system',
+                    'time': self.get_time(),
+                    'message': '日志已手动保存'
+                }
+            else:
+                response = {
+                    'type': 'system',
+                    'time': self.get_time(),
+                    'message': '日志保存失败'
+                }
         
         else:
             response = {
@@ -264,7 +400,7 @@ class TCPChatServer:
         print()
         self.log("服务器控制台已就绪", 'SYSTEM')
         self.log("输入消息发送给所有客户端", 'SYSTEM')
-        self.log("命令: 'quit'=退出, 'stats'=统计, 'list'=在线用户", 'SYSTEM')
+        self.log("命令: 'quit'=退出, 'stats'=统计, 'list'=在线用户, 'savelog'=保存日志", 'SYSTEM')
         print("─" * 60)
         
         loop = asyncio.get_event_loop()
@@ -321,6 +457,12 @@ class TCPChatServer:
                     else:
                         self.log("当前无在线用户", 'INFO')
                 
+                elif message.lower() == 'savelog':
+                    if self._save_logs_to_file():
+                        self.log("日志已手动保存", 'SUCCESS')
+                    else:
+                        self.log("日志保存失败", 'ERROR')
+                
                 else:
                     broadcast_msg = {
                         'type': 'message',
@@ -328,6 +470,7 @@ class TCPChatServer:
                         'username': 'Server',
                         'message': message
                     }
+                    self.messages.append(broadcast_msg)  # 保存到历史
                     await self.broadcast(json.dumps(broadcast_msg, ensure_ascii=False) + '\n')
                     self.log(f"已广播: {message}", 'SUCCESS')
                     self.message_count += 1
